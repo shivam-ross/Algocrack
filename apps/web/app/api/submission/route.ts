@@ -1,6 +1,17 @@
 import { getServerSession } from "next-auth";
 import { NEXT_AUTH_CONFIG } from "../../../lib/auth";
 import { prisma } from "db";
+import { Language, Languages, SubmissionStatus } from "@prisma/client";
+
+interface sub {
+  id: string,
+  status: SubmissionStatus,
+  language: Languages,
+  problemId: string,
+  problem : {
+    title: string
+  }
+}
 
 export async function GET() {
   const session = await getServerSession(NEXT_AUTH_CONFIG);
@@ -26,7 +37,7 @@ export async function GET() {
     });
 
     // Transform the result to include `problemName` instead of `problemId`
-    const formatted = submissions.map((sub) => ({
+    const formatted = submissions.map((sub : sub) => ({
       id: sub.id,
       status: sub.status,
       language: sub.language,
