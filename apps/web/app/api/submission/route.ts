@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { NEXT_AUTH_CONFIG } from "../../../lib/auth";
 import { prisma } from "db";
-import { Language, Languages, SubmissionStatus } from "@prisma/client";
+import { Languages, SubmissionStatus } from "@prisma/client";
 
 interface sub {
   id: string,
