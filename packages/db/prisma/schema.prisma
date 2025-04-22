@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum Languages {
+  JAVASCRIPT
+  CPP
+  PYTHON
+}
+
+enum SubmissionStatus {
+  PENDING
+  ACCEPTED
+  WRONG_ANSWER
+  TIME_LIMIT_EXCEEDED
+  RUNTIME_ERROR
+  COMPILE_ERROR
+}
+
+
+model User {
+  id             String     @id @default(cuid())
+  name           String?
+  email          String     @unique
+  emailVerified  DateTime?
+  image          String?
+  password       String?    // Optional for OAuth
+  accounts       Account[]
+  sessions       Session[]
+  submissions    Submission[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+}
+
+model Account {
+  id                 String   @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?
+  access_token       String?
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id            String   @id @default(cuid())
+  sessionToken  String   @unique
+  userId        String
+  expires       DateTime
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Problem {
+  id           String     @id @default(cuid())
+  title        String
+  description  String
+  tags         String
+  difficulty   Difficulty
+  functionName String
+  returnType   String
+  args         Json[]
+  testCases    TestCase[]
+  languages    Language[]
+  submissions  Submission[]
+}
+
+model Language {
+  id         String     @id @default(cuid())
+  name       Languages
+  boilerplate String
+  problemId  String
+  problem    Problem    @relation(fields: [problemId], references: [id], onDelete: Cascade)
+}
+
+model TestCase {
+  id        String   @id @default(cuid())
+  input     String
+  output    String
+  problemId String
+  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+}
+
+model Submission {
+  id                  String               @id @default(cuid())
+  code                String
+  status              SubmissionStatus
+  language            Languages
+  problemId           String
+  userId              String
+  submittedTestCases  SubmittedTestCase[]
+  createdAt           DateTime             @default(now())
+
+  problem             Problem              @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SubmittedTestCase {
+  id            String           @id @default(cuid())
+  input         String
+  output        String
+  expectedOutput String
+  status        SubmissionStatus
+  submissionId  String
+  submission    Submission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+}

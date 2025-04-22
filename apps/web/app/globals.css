@@ -1,3 +1,4 @@
+@import "tailwindcss";
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -21,11 +22,6 @@ body {
   background: var(--background);
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
 
 a {
   color: inherit;
@@ -47,4 +43,20 @@ a {
   .imgDark {
     display: unset;
   }
+}
+.scrollbar-hidden {
+  scrollbar-width: none; 
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--foreground) var(--background);
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
