@@ -72,7 +72,7 @@ export default function ProblemPage() {
       return;
     }
 
-    const wsUrl = `ws://localhost:8080?token=${encodeURIComponent(token)}`;
+    const wsUrl = `${process.env.WS_SERVER_URL}?token=${encodeURIComponent(token)}`;
     console.log(`Connecting to WebSocket: ${wsUrl}`);
 
     // Clean up existing connection
