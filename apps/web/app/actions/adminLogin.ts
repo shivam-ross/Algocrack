@@ -15,12 +15,7 @@ export async function AdminLogin(adminKey: string) {
 
     if(!success) return {msg: "Invalid admin key", success: false};
 
-    (await cookies()).set('admin-key', adminKey!, {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'strict',
-        path: '/',
-      })
+    (await cookies()).set('admin-key', adminKey!)
 
     return redirect('/admin');
   
