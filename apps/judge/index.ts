@@ -1,8 +1,9 @@
 // bun-ws-server.ts
 import { WebSocketServer, WebSocket as WSWebSocket } from "ws";
-import { writeFile, mkdir, rm } from "fs/promises";
+import { writeFile, mkdir, rm, access } from "fs/promises";
 import { randomUUID } from "crypto";
 import { exec } from "child_process";
+import { constants } from "fs";
 
 import { prisma } from "db";
 import { jwtVerify, importJWK, type JWK } from 'jose';
@@ -12,9 +13,10 @@ import type { $Enums, Languages } from "@prisma/client";
 // --- Configuration ---
 const key: JWK = JSON.parse(process.env.JWT_SIGNING_KEY!);
 const DOCKER_TIMEOUT_MS = 10000;
+const TEMP_DIR_BASE = "./tmp"; // Use a directory within the project instead of /tmp
 
 if (!key) {
-    console.error("FATAL: NEXTAUTH_SECRET environment variable is not set.");
+    console.error("FATAL: JWT_SIGNING_KEY environment variable is not set.");
     process.exit(1);
 }
 
@@ -114,7 +116,7 @@ interface AuthenticatedWebSocket extends WSWebSocket {
 // --- WebSocket Server ---
 const wss = new WebSocketServer({ port: 8080 });
 
-console.log("WebSocket server starting on ws://localhost:3001");
+console.log("WebSocket server starting on ws://localhost:8080");
 
 wss.on("connection", async (ws: AuthenticatedWebSocket, req) => {
     console.log("Client connected");
@@ -183,11 +185,13 @@ async function processQueue() {
                 language: lang.toUpperCase() as Languages,
                 status: "PENDING",
             }
-        })
+        });
+        console.log(`Created submission ${submission.id} for job ${problemId}`);
     } catch (error) {
         console.error("Failed to create submission:", error);
         ws.send(JSON.stringify({ error: "Database Error", detail: "Failed to create submission in database." }));
         running = false;
+        processQueue();
         return;
     }
 
@@ -199,7 +203,7 @@ async function processQueue() {
     }
 
     const id = randomUUID();
-    const dir = `/tmp/code-${id}`;
+    const dir = `${TEMP_DIR_BASE}/code-${id}`;
 
     let filename = "";
     let compileCmd = "";
@@ -226,6 +230,10 @@ async function processQueue() {
         default:
             console.log(`Unsupported language requested: ${lang}`);
             ws.send(JSON.stringify({ error: "Unsupported language", detail: `Language '${lang}' is not supported.` }));
+            await prisma.submission.update({
+                where: { id: submission.id },
+                data: { status: "RUNTIME_ERROR" }
+            });
             running = false;
             processQueue();
             return;
@@ -237,6 +245,19 @@ async function processQueue() {
     console.log(`Processing job ${id} for user ${userId} in ${dir}`);
 
     try {
+        // Create directory with explicit permissions
+        console.log(`Creating directory ${dir}...`);
+        await mkdir(dir, { recursive: true, mode: 0o777 });
+        console.log(`Directory ${dir} created.`);
+
+        // Verify directory exists
+        await access(dir, constants.R_OK | constants.W_OK);
+        console.log(`Directory ${dir} is accessible.`);
+
+        // Verify Dockerfile exists
+        await access(`docker/${dockerfile}.dockerfile`, constants.R_OK);
+        console.log(`Dockerfile docker/${dockerfile}.dockerfile found.`);
+
         const problem = await prisma.problem.findUnique({
             where: { id: problemId },
             select: { functionName: true, args: true, returnType: true }
@@ -244,6 +265,10 @@ async function processQueue() {
         if (!problem) {
             console.log(`Problem with ID ${problemId} not found.`);
             ws.send(JSON.stringify({ error: "Problem Not Found", detail: `Problem with ID ${problemId} not found.` }));
+            await prisma.submission.update({
+                where: { id: submission.id },
+                data: { status: "RUNTIME_ERROR" }
+            });
             return;
         }
         const { functionName, args, returnType } = problem;
@@ -307,6 +332,7 @@ process.stdin.on('end', () => {
 `;
                 console.log(`JavaScript finalCode for job ${id}:\n`, finalCode);
                 break;
+
             case "python":
                 sanitizedCode = code
                     .split('\n')
@@ -314,7 +340,6 @@ process.stdin.on('end', () => {
                     .filter(line => line.trim() !== '')
                     .join('\n');
                 finalCode = `${sanitizedCode}
-import sys
 import sys
 
 if __name__ == "__main__":
@@ -406,8 +431,11 @@ int main() {
                 break;
         }
 
-        await mkdir(dir, { recursive: true });
+        // Write files and verify
+        console.log(`Writing ${filename} to ${dir}...`);
         await writeFile(`${dir}/${filename}`, finalCode);
+        await access(`${dir}/${filename}`, constants.R_OK | constants.W_OK);
+        console.log(`${filename} written successfully.`);
 
         const runShContent = `#!/bin/sh
 set -e
@@ -416,8 +444,14 @@ ${compileCmd ? `${compileCmd}` : ""}
 
 ${executeCmd} < /app/input.txt
 `;
+        console.log(`Writing run.sh to ${dir}...`);
         await writeFile(`${dir}/run.sh`, runShContent);
+        await access(`${dir}/run.sh`, constants.R_OK | constants.W_OK);
+        console.log(`run.sh written successfully.`);
+
+        console.log(`Setting executable permissions for run.sh...`);
         await execPromise(`chmod +x ${dir}/run.sh`);
+        console.log(`Permissions set for run.sh.`);
 
         console.log(`Building docker image ${dockerImageTag}...`);
         await execPromise(buildCmd, 60000);
@@ -430,6 +464,10 @@ ${executeCmd} < /app/input.txt
         if (testCases.length === 0) {
             console.log(`No test cases found for problem ${problemId}`);
             ws.send(JSON.stringify({ error: "No Test Cases", detail: "No test cases configured for this problem." }));
+            await prisma.submission.update({
+                where: { id: submission.id },
+                data: { status: "RUNTIME_ERROR" }
+            });
             return;
         }
 
@@ -476,16 +514,23 @@ ${executeCmd} < /app/input.txt
                     error: "Invalid Test Case Input",
                     detail: `${err instanceof Error ? err.message : 'Unknown error'} (Input: ${JSON.stringify(input)}, Expected args: ${JSON.stringify(validatedArgs.map(arg => arg.name))})`
                 }));
+                await prisma.submission.update({
+                    where: { id: submission.id },
+                    data: { status: "RUNTIME_ERROR" }
+                });
                 allPassed = false;
                 break;
             }
+            console.log(`Writing input.txt to ${dir}...`);
             await writeFile(`${dir}/input.txt`, inputLines.join('\n'));
+            await access(`${dir}/input.txt`, constants.R_OK | constants.W_OK);
+            console.log(`input.txt written successfully.`);
 
             const runDockerCmd = `docker run --rm --network none -v "${dir}":/app --workdir /app ${dockerImageTag} sh /app/run.sh`;
 
             let actualOutput = "";
             let passed = false;
-            let testCaseError: { type: $Enums.SubmissionStatus | null; detail: string } = {type: null, detail: ""};
+            let testCaseError: { type: $Enums.SubmissionStatus | null; detail: string } = { type: null, detail: "" };
 
             try {
                 console.log(`Running test case ${testCaseNum}/${testCases.length} for job ${id}`);
@@ -506,7 +551,7 @@ ${executeCmd} < /app/input.txt
                 const errorDetail = execError.stderr || execError.message || "Unknown error during execution.";
                 if (execError.message.includes('ETIMEDOUT') || execError.message.includes('killed')) {
                     testCaseError = { type: "TIME_LIMIT_EXCEEDED", detail: `Execution timed out after ${DOCKER_TIMEOUT_MS / 1000} seconds.` };
-                } else if (execError.message.includes('g++') || (lang === 'cpp' && errorDetail.toLowerCase().includes('error:')) || (lang === 'python' && (errorDetail.toLowerCase().includes('syntaxerror') || errorDetail.toLowerCase().includes('indentationerror')))) {
+                } else if (errorDetail.includes('g++') || (lang === 'cpp' && errorDetail.toLowerCase().includes('error:')) || (lang === 'python' && (errorDetail.toLowerCase().includes('syntaxerror') || errorDetail.toLowerCase().includes('indentationerror')))) {
                     testCaseError = { type: "COMPILE_ERROR", detail: `Code failed to compile: ${errorDetail}` };
                 } else {
                     testCaseError = { type: "RUNTIME_ERROR", detail: `Execution failed: ${errorDetail}` };
@@ -556,14 +601,16 @@ ${executeCmd} < /app/input.txt
             }
 
             if (!passed) {
+                await prisma.submission.update({
+                    where: { id: submission.id },
+                    data: { status: passed ? "ACCEPTED" : "WRONG_ANSWER" }
+                });
                 allPassed = false;
                 break;
             }
-
         }
 
         if (allPassed && ws.readyState === WSWebSocket.OPEN) {
-            
             await prisma.submission.update({
                 where: { id: submission.id },
                 data: { status: "ACCEPTED" }
@@ -582,10 +629,10 @@ ${executeCmd} < /app/input.txt
 
             if (err.message?.includes('docker build')) {
                 clientError = "Build Error";
-                detail = "Failed to build the execution environment. Check Dockerfile or server setup.";
+                detail = `Failed to build the execution environment: ${err.message}. Check Dockerfile or server setup.`;
             } else if (err.code === 'ENOENT') {
                 clientError = "File System Error";
-                detail = "Server encountered a temporary file system issue.";
+                detail = `Server encountered a file system issue: ${err.message}`;
             }
             await prisma.submission.update({
                 where: { id: submission.id },
