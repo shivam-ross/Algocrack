@@ -72,7 +72,7 @@ export default function ProblemPage() {
       return;
     }
 
-    const wsUrl = `${process.env.JUDGE_URL}?token=${encodeURIComponent(token)}`;
+    const wsUrl = `wss://judge.shivamross.com?token=${encodeURIComponent(token)}`;
     console.log(`Connecting to WebSocket: ${wsUrl}`);
 
     // Clean up existing connection
