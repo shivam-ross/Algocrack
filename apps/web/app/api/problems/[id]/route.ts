@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import { ProlemCreateSchema } from "../../../../lib/zodSchema";
 import { NextRequest } from "next/server";
 import { generateBoilerplate } from "../../../../lib/boilerplate";
+import { $Enums } from "@prisma/client";
 
 export async function GET(
     request: NextRequest,
@@ -16,28 +17,37 @@ export async function GET(
             where: {
                 id: id,
             },
+            include : {
+                languages: true
+            }
         });
+
         if (!problem) {
             return new Response("Problem not found", { status: 404 });
         }
-        const boilerplate = await prisma.language.findMany({
-            where: {
-                problemId: id,
+        const res : {
+            title: string;
+            description: string;
+            tags: string;
+            difficulty: $Enums.Difficulty;
+            boilerplate: {
+                javascript: string;
+                cpp: string;
+                python: string;
+            };
+        } = {
+            title: problem.title,
+            description: problem.description,
+            tags: problem.tags,
+            difficulty: problem.difficulty,
+            boilerplate: {
+                javascript: problem.languages.find(lang => lang.name === "JAVASCRIPT")?.boilerplate || "",
+                cpp: problem.languages.find(lang => lang.name === "CPP")?.boilerplate || "",
+                python: problem.languages.find(lang => lang.name === "PYTHON")?.boilerplate || ""
             }
-        })
-        if(!boilerplate) {
-            return new Response("Boilerplate not found", { status: 404 });
-        }
-        const testCases = await prisma.testCase.findMany({
-            where: {
-                problemId: id,
-            }
-        })
-        if(!testCases) {
-            return new Response("Test cases not found", { status: 404 });
-        }
+        };
         
-        return new Response(JSON.stringify({problem, boilerplate, testCases}), { status: 200 });
+        return new Response(JSON.stringify(res), { status: 200 });
     } catch (error) {
         console.error("Error fetching problem:", error);
         return new Response("Failed to fetch problem", { status: 500 });
