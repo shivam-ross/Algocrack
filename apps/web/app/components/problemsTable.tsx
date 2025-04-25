@@ -8,6 +8,7 @@ import { Problem } from "./problem";
 export function Problems(){
 
     const router = useRouter();
+    const [loading, setLoading] = useState(true);
     const [problems, setProlems] = useState<{
         id: string;
         title: string;
@@ -21,6 +22,8 @@ export function Problems(){
     }
 
     useEffect(() => {
+        setLoading(true);
+
         const fetchProblems = async () => {
             const res = await fetch("/api/problems", {
                 method: "GET",
@@ -34,9 +37,12 @@ export function Problems(){
             } else {
                 alert("Failed to fetch problems");
             }
+            setLoading(false);
         };
         fetchProblems();
     }, []);
+
+    if (loading) return <div className="flex flex-col justify-center items-center font-mono text-xl text-gray-800 h-[calc(100vh-112px)]">Loading...</div>
 
     return (
         <div className="flex flex-col justify-center items-center text-gray-800 h-[calc(100vh-112px)]">
