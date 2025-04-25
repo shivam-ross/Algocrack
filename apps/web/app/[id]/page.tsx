@@ -2,8 +2,9 @@
 import { useEffect, useState, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { Topbar } from '../components/topbar';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { getUserToken } from '../actions/getToken';
+import { $Enums } from '@prisma/client';
 
 
 interface TestCaseResult {
@@ -28,15 +29,22 @@ type ServerMessage = TestCaseResult | FinalStatus | ErrorMessage;
 
 export default function ProblemPage() {
   const { id } = useParams();
+  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
-  const [selectedLanguage, setSelectedLanguage] = useState('cpp');
+  const [selectedLanguage, setSelectedLanguage] = useState<'javascript' | 'cpp' | 'python'>('javascript');
   const [userCode, setUserCode] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [data, setData] = useState<{
-    problem: { title: string; difficulty: string; tags: string; description: string };
-    boilerplate: { [key: string]: string };
-  } | null>(null);
-  const [boilerplate, setBoilerplate] = useState<{ [key: string]: string } | null>(null);
+    title: string;
+    description: string;
+    tags: string;
+    difficulty: $Enums.Difficulty;
+    boilerplate: {
+        javascript: string;
+        cpp: string;
+        python: string;
+    };
+}>();
   const [results, setResults] = useState<ServerMessage[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionStatus, setSubmissionStatus] = useState('Idle');
@@ -67,6 +75,10 @@ export default function ProblemPage() {
 
   // WebSocket connection
   useEffect(() => {
+    if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+    
     if (!token || !id) {
       console.log('Waiting for token or problem ID...');
       return;
@@ -156,7 +168,7 @@ export default function ProblemPage() {
         ws.current.close();
       }
     };
-  }, [token, id]);
+  }, [token, id, ws.current?.readyState]);
 
   // Fetch problem data
   useEffect(() => {
@@ -164,27 +176,16 @@ export default function ProblemPage() {
       setIsLoading(true);
       try {
         const response = await fetch(`/api/problems/${id}`);
-        if (!response.ok) {
+        if (response.status == 500) {
           throw new Error(`Failed to fetch problem: ${response.statusText}`);
         }
+        if (response.status === 404) {
+          router.push('/error/error')
+        }
+
         const data = await response.json();
         setData(data);
 
-        interface BoilerplateItem {
-          name: string;
-          boilerplate: string;
-        }
-
-        const bpData = (data.boilerplate || []).reduce((acc: { [key: string]: string }, item: BoilerplateItem) => {
-          if (item && typeof item.name === 'string' && item.boilerplate !== undefined && item.boilerplate !== null) {
-            acc[item.name.toLowerCase()] = item.boilerplate;
-          } else {
-            console.warn('Skipping malformed boilerplate item:', item);
-          }
-          return acc;
-        }, {});
-        setBoilerplate(bpData);
-        setUserCode(bpData[selectedLanguage] || '');
       } catch (error) {
         console.error('Error fetching problem:', error);
         setSubmissionStatus('Error loading problem data');
@@ -193,14 +194,8 @@ export default function ProblemPage() {
       }
     };
     fetchProblem();
-  }, [id, selectedLanguage]);
+  }, [id, router]);
 
-  // Update user code when language changes
-  useEffect(() => {
-    if (boilerplate) {
-      setUserCode(boilerplate[selectedLanguage] || '');
-    }
-  }, [selectedLanguage, boilerplate]);
 
   // Auto-scroll to the latest result
   useEffect(() => {
@@ -255,8 +250,8 @@ export default function ProblemPage() {
     }
   };
 
-  if (isLoading || !data || !boilerplate) {
-    return <div className="flex justify-center items-center h-screen text-xl">Loading...</div>;
+  if (isLoading) {
+    return <div className="bg-purple-200 text-gray-800 font-mono flex justify-center items-center h-screen text-xl">Loading...</div>;
   }
 
   return (
@@ -264,16 +259,16 @@ export default function ProblemPage() {
       <Topbar />
       <div className="grid grid-cols-5 justify-items-center w-full gap-3 p-4">
         <div className="col-span-5 md:col-span-2 w-full px-4 pt-4">
-          <h1 className="text-2xl font-mono text-gray-800 font-semibold mb-6">{data.problem.title}</h1>
+          <h1 className="text-2xl font-mono text-gray-800 font-semibold mb-6">{data?.title}</h1>
           <p className="text-sm font-thin text-gray-800 pb-2">
-            Difficulty: <span className="font-semibold">{data.problem.difficulty}</span>
+            Difficulty: <span className="font-semibold">{data?.difficulty}</span>
           </p>
           <p className="text-sm font-thin text-gray-800 pb-2">
-            Tags: <span className="font-semibold">{data.problem.tags}</span>
+            Tags: <span className="font-semibold">{data?.tags}</span>
           </p>
           <p className="text-sm font-sans text-black pb-3">Description:</p>
           <p style={{ whiteSpace: 'pre-line' }} className="text-md font-mono text-gray-800">
-            {data.problem.description}
+            {data?.description}
           </p>
         </div>
         <div className="col-span-5 md:col-span-3 w-full h-full flex flex-col px-4 md:px-0">
@@ -281,7 +276,7 @@ export default function ProblemPage() {
             <select
               className="p-2 text-gray-800 bg-purple-200 border border-2 border-gray-800 rounded-lg hover:bg-gray-800 hover:text-gray-200"
               value={selectedLanguage}
-              onChange={(e) => setSelectedLanguage(e.target.value)}
+              onChange={(e) => setSelectedLanguage(e.target.value as 'javascript' | 'cpp' | 'python')}
               disabled={isSubmitting}
             >
               <option value="javascript">JavaScript</option>
@@ -294,7 +289,7 @@ export default function ProblemPage() {
             height="70vh"
             width="100%"
             language={selectedLanguage}
-            value={userCode}
+            value={data?.boilerplate[selectedLanguage]}
             theme="vs-dark"
             onChange={(value) => setUserCode(value || '')}
             options={{ readOnly: isSubmitting }}
