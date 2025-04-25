@@ -48,7 +48,7 @@ export function Topbar() {
 
   return (
     <div className="flex flex-col justify-center items-center pb-6">
-      <div className="flex items-center justify-between p-4 bg-gray-800 text-gray-200 w-full lg:w-[90vw]">
+      <div className="flex items-center justify-between p-4 bg-gray-800 text-gray-200 w-full lg:w-[90vw] min-h-[88px]">
         <div className="flex items-center gap-3">
           <Image
             src="/logo.svg"
