@@ -31,7 +31,7 @@ useEffect(() => {
 },[]);
   
 return (
-    <div className="flex flex-col items-center bg-purple-200 min-h-screen">
+    <div className="bg-purple-200 min-h-screen">
       <Topbar/>
       <div className="flex flex-col justify-center items-center text-gray-800 h-[calc(100vh-112px)]">
                 <div className="w-full lg:w-[80vw] h-full overflow-y-scroll scrollbar-hidden overflow-x-hidden">
