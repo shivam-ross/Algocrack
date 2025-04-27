@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import { ProlemCreateSchema } from "../../../../lib/zodSchema";
 import { NextRequest } from "next/server";
 import { generateBoilerplate } from "../../../../lib/boilerplate";
-import { $Enums } from "@prisma/client";
+import { $Enums, Prisma } from "@prisma/client";
 
 export async function GET(
     request: NextRequest,
@@ -18,7 +18,8 @@ export async function GET(
                 id: id,
             },
             include : {
-                languages: true
+                languages: true,
+                testCases: true
             }
         });
 
@@ -30,6 +31,15 @@ export async function GET(
             description: string;
             tags: string;
             difficulty: $Enums.Difficulty;
+            functionName: string;
+            returnType: string;
+            args: Prisma.JsonValue[];
+            testCases: {
+                id: string;
+                problemId: string;
+                input: string;
+                output: string;
+            }[];
             boilerplate: {
                 javascript: string;
                 cpp: string;
@@ -40,6 +50,10 @@ export async function GET(
             description: problem.description,
             tags: problem.tags,
             difficulty: problem.difficulty,
+            functionName: problem.functionName,
+            returnType: problem.returnType,
+            args: problem.args,
+            testCases: problem.testCases,
             boilerplate: {
                 javascript: problem.languages.find(lang => lang.name === "JAVASCRIPT")?.boilerplate || "",
                 cpp: problem.languages.find(lang => lang.name === "CPP")?.boilerplate || "",

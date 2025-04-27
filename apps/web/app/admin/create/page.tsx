@@ -46,7 +46,7 @@ export default function CreateProblem() {
   };
 
   return (
-    <div className="p-4 bg-purple-100 min-h-screen space-y-4">
+    <div className="p-4 bg-purple-200 min-h-screen space-y-4">
       <div className="flex justify-between bg-gray-800 text-white p-3 rounded">
         <button onClick={()=>{router.push('/admin')}} className="bg-red-300 text-gray-800 px-4 py-2 rounded">Cancel</button>
         <button onClick={handleSubmit} className="bg-green-300 text-gray-800 px-4 py-2 rounded">Save</button>

@@ -6,6 +6,7 @@ import Image from "next/image";
 
 export default function Admin(){
     const router = useRouter();
+    const [loading, setLoading] = useState(true);
     const [problems, setProlems] = useState<Array<{
         id: string;
         title: string;
@@ -16,6 +17,8 @@ export default function Admin(){
 
 
     useEffect(() => {
+        setLoading(true);
+
         const fetchProblems = async () => {
             const res = await fetch("/api/problems", {
                 method: "GET",
@@ -29,13 +32,14 @@ export default function Admin(){
             } else {
                 alert("Failed to fetch problems");
             }
+            setLoading(false);
         };
         fetchProblems();
     }, []);
 
     
     return(
-        <div>
+        <div className="bg-purple-200">
             <div className="flex flex-col justify-center items-center pb-6">
                 <div className="flex items-center justify-between p-4 bg-gray-800 text-gray-200 w-full lg:w-[90vw]">
                     <div className="flex items-center gap-3">
@@ -61,7 +65,7 @@ export default function Admin(){
                         <h2 className="text-lg font-bold">Difficulty</h2>
                         <h2 className="text-lg font-bold">Tags</h2>
                     </div>
-                    {
+                    { (loading) ? <div className="flex flex-col h-full items-center justify-center text-gray-800 font-mono text-lg">loading...</div> :
                     problems.map((problem) => (
                         <div key={problem.id} onClick={()=> router.push(`admin/${problem.id}`)}>
                             <Problem

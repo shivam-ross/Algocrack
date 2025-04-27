@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 export default function EditProblem () {
     const router = useRouter();
+    const [loading, setLoading] = useState(true);
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
     const [difficulty, setDifficulty] = useState("EASY");
@@ -16,6 +17,8 @@ export default function EditProblem () {
     const { id } = useParams();
 
     const handleSubmit = async () => {
+        setLoading(true);
+
         const payload = {
             title,
             description,
@@ -39,9 +42,12 @@ export default function EditProblem () {
         } else {
             alert("Failed to update problem");
         }
+
+        setLoading(false);
     };
 
     const handleDelete = async () => {
+        setLoading(true);
         const res = await fetch(`/api/problems/${id}`, {
             method: "DELETE",
             headers: {
@@ -54,10 +60,13 @@ export default function EditProblem () {
         } else {
             alert("Failed to delete problem");
         }
+        setLoading(false);
     };
     
 
     useEffect(() => {
+        setLoading(true);
+
         const fetchProblem = async () => {
             const res = await fetch(`/api/problems/${id}`, {
                 method: "GET",
@@ -67,22 +76,25 @@ export default function EditProblem () {
             });
             if (res.ok) {
                 const data = await res.json();
-                setTitle(data.problem.title);
-                setDescription(data.problem.description);
-                setDifficulty(data.problem.difficulty);
-                setTags(data.problem.tags);
+                setTitle(data.title);
+                setDescription(data.description);
+                setDifficulty(data.difficulty);
+                setTags(data.tags);
                 setTestCases(data.testCases);
-                setFunctionName(data.problem.functionName);
-                setReturnType(data.problem.returnType);
-                setArgs(data.problem.args);
+                setFunctionName(data.functionName);
+                setReturnType(data.returnType);
+                setArgs(data.args);
             } else {
                 alert("Failed to fetch problem");
             }
+            setLoading(false);
         };
         fetchProblem();
     }, [id]);
+
+    if(loading) return <div className="bg-purple-200 flex flex-col justify-center items-center font-mono text-xl text-ray-200 h-screen">Loading...</div>
     return(
-        <div className="p-4 bg-purple-100 min-h-screen space-y-4">
+        <div className="p-4 bg-purple-200 min-h-screen space-y-4">
       <div className="flex justify-between bg-gray-800 text-white p-3 rounded">
         <button onClick={handleDelete} className="bg-red-300 text-gray-800 px-4 py-2 rounded">Delete</button>
         <button onClick={handleSubmit} className="bg-green-300 text-gray-800 px-4 py-2 rounded">Save</button>
