@@ -73,104 +73,176 @@ export default function ProblemPage() {
     fetchToken();
   }, []);
 
-  // WebSocket connection
   useEffect(() => {
-    if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
-      return;
-    }
-    
-    if (!token || !id) {
-      console.log('Waiting for token or problem ID...');
-      return;
-    }
-
-    const wsUrl = `wss://judge.shivamross.com?token=${encodeURIComponent(token)}`;
-    console.log(`Connecting to WebSocket: ${wsUrl}`);
-
-    // Clean up existing connection
-    if (ws.current && ws.current.readyState !== WebSocket.CLOSED) {
-      ws.current.close();
-    }
-
-    ws.current = new WebSocket(wsUrl);
-
-    ws.current.onopen = () => {
-      console.log('WebSocket connected');
-      setSubmissionStatus('Ready to submit');
-    };
-
-    ws.current.onmessage = (event) => {
-      console.log('Raw WebSocket message:', event.data);
-      try {
-        const message: ServerMessage = JSON.parse(event.data);
-        console.log('Parsed message:', message);
-
-        // Update results
-        setResults((prev) => {
-          const newResults = [...prev, message];
-          console.log('Updated results:', newResults);
-          return newResults;
-        });
-
-        // Update submission status based on message
-        if ('status' in message) {
-          // FinalStatus
-          setSubmissionStatus(message.status);
-          setIsSubmitting(false);
-        } else if ('error' in message) {
-          // ErrorMessage
-          if ('detail' in message) {
-            setSubmissionStatus(`Error: ${message.error} - ${message.detail}`);
-          } else {
-            setSubmissionStatus(`Error: ${message.error}`);
-          }
-          setIsSubmitting(false);
-        } else if ('testCase' in message) {
-          // TestCaseResult
-          const status = message.passed
-            ? `Test Case ${message.testCase}: Passed`
-            : `Test Case ${message.testCase}: Failed${message.error ? ` (${message.error.type})` : ''}`;
-          setSubmissionStatus(status);
-          if (!message.passed) {
-            setIsSubmitting(false);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to parse WebSocket message:', error, 'Raw data:', event.data);
-        setResults((prev) => [
-          ...prev,
-          { error: 'Client Error', detail: `Failed to parse server message: ${String(error)}` },
-        ]);
-        setSubmissionStatus('Error parsing server response');
-        setIsSubmitting(false);
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let monitorInterval: NodeJS.Timeout | null = null;
+    let isMounted = true;
+  
+    const connectWebSocket = () => {
+      if (!token || !id) {
+        console.log('Waiting for token or problem ID...');
+        setSubmissionStatus('Waiting for authentication...');
+        return;
       }
-    };
-
-    ws.current.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setSubmissionStatus('WebSocket connection error');
-      setIsSubmitting(false);
-    };
-
-    ws.current.onclose = (event) => {
-      console.log('WebSocket closed:', event.code, event.reason);
-      let status = `WebSocket closed: ${event.reason || 'Unknown reason'} (Code: ${event.code})`;
-      if (event.code === 1008) {
-        status = 'Authentication failed. Please log in again.';
+  
+      if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
+        console.log('WebSocket already connected or connecting');
+        return;
       }
-      setSubmissionStatus(status);
-      setIsSubmitting(false);
-    };
-
-    return () => {
-      console.log('Cleaning up WebSocket');
-      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+  
+      const wsUrl = `wss://judge.shivamross.com?token=${encodeURIComponent(token)}`;
+      console.log(`Connecting to WebSocket: ${wsUrl}`);
+  
+      if (ws.current && ws.current.readyState !== WebSocket.CLOSED) {
         ws.current.close();
       }
-    };
-  }, [token, id, ws.current?.readyState]);
+  
+      ws.current = new WebSocket(wsUrl);
+  
+      ws.current.onopen = () => {
+        if (!isMounted) return;
+        console.log('WebSocket connected');
+        setSubmissionStatus('Ready to submit');
 
-  // Fetch problem data
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = null;
+        }
+      };
+  
+      ws.current.onmessage = (event) => {
+        if (!isMounted) return;
+        console.log('Raw WebSocket message:', event.data);
+        try {
+          const message: ServerMessage = JSON.parse(event.data);
+          console.log('Parsed message:', message);
+  
+          setResults((prev) => {
+            const newResults = [...prev, message];
+            console.log('Updated results:', newResults);
+            return newResults;
+          });
+  
+          if ('status' in message) {
+            setSubmissionStatus(message.status);
+            setIsSubmitting(false);
+          } else if ('error' in message) {
+            if ('detail' in message) {
+              setSubmissionStatus(`Error: ${message.error} - ${message.detail}`);
+            } else {
+              setSubmissionStatus(`Error: ${message.error}`);
+            }
+            setIsSubmitting(false);
+          } else if ('testCase' in message) {
+            const status = message.passed
+              ? `Test Case ${message.testCase}: Passed`
+              : `Test Case ${message.testCase}: Failed${message.error ? ` (${message.error.type})` : ''}`;
+            setSubmissionStatus(status);
+            if (!message.passed) {
+              setIsSubmitting(false);
+            }
+          }
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error, 'Raw data:', event.data);
+          setResults((prev) => [
+            ...prev,
+            { error: 'Client Error', detail: `Failed to parse server message: ${String(error)}` },
+          ]);
+          setSubmissionStatus('Error parsing server response');
+          setIsSubmitting(false);
+        }
+      };
+  
+      ws.current.onerror = (error) => {
+        if (!isMounted) return;
+        console.error('WebSocket error:', error);
+        setSubmissionStatus('WebSocket connection error');
+        setIsSubmitting(false);
+      };
+  
+      ws.current.onclose = (event) => {
+        if (!isMounted) return;
+        console.log('WebSocket closed:', event.code, event.reason);
+        let status = 'Disconnected, attempting to reconnect...';
+        if (event.code === 1008) {
+          status = 'Authentication failed. Please log in again.';
+          setSubmissionStatus(status);
+          return; // Don't reconnect on auth failure
+        }
+        setSubmissionStatus(status);
+        setIsSubmitting(false);
+  
+        if (isMounted) {
+          console.log('Scheduling reconnection attempt...');
+          const delay = Math.min(1000 * 2 ** (Math.random() * 3), 30000); // Exponential backoff up to 30s
+          reconnectTimeout = setTimeout(() => {
+            if (isMounted) {
+              connectWebSocket();
+            }
+          }, delay);
+        }
+      };
+    };
+  
+    connectWebSocket();
+  
+    monitorInterval = setInterval(() => {
+      if (!isMounted) return;
+      if (ws.current) {
+        if (ws.current.readyState === WebSocket.CLOSED) {
+          console.log('WebSocket is closed, attempting to reconnect...');
+          setSubmissionStatus('Disconnected, attempting to reconnect...');
+          connectWebSocket();
+        } else if (ws.current.readyState === WebSocket.CONNECTING) {
+          setSubmissionStatus('Connecting to server...');
+        } else if (ws.current.readyState === WebSocket.OPEN && navigator.onLine) {
+          setSubmissionStatus('Ready to submit');
+        } else if (!navigator.onLine) {
+          console.log('Internet disconnected, closing WebSocket...');
+          setSubmissionStatus('Internet disconnected, attempting to reconnect...');
+          if (ws.current.readyState !== WebSocket.CLOSED) {
+            ws.current.close(1000, 'Internet disconnected');
+          }
+        }
+      }
+    }, 1000);
+  
+    const handleOffline = () => {
+      if (!isMounted) return;
+      console.log('Internet disconnected');
+      setSubmissionStatus('Internet disconnected, attempting to reconnect...');
+      if (ws.current && ws.current.readyState !== WebSocket.CLOSED) {
+        ws.current.close(1006, 'Internet disconnected');
+      }
+    };
+  
+    const handleOnline = () => {
+      if (!isMounted) return;
+      console.log('Internet restored, attempting to reconnect...');
+      setSubmissionStatus('Connecting to server...');
+      connectWebSocket();
+    };
+  
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+  
+    return () => {
+      isMounted = false;
+      console.log('Cleaning up WebSocket');
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      if (monitorInterval) {
+        clearInterval(monitorInterval);
+      }
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.close(1000, 'Component unmounted');
+      }
+    };
+  }, [token, id]);
+
   useEffect(() => {
     const fetchProblem = async () => {
       setIsLoading(true);
@@ -196,8 +268,6 @@ export default function ProblemPage() {
     fetchProblem();
   }, [id, router]);
 
-
-  // Auto-scroll to the latest result
   useEffect(() => {
     if (latestResultRef.current) {
       latestResultRef.current.scrollIntoView({
@@ -207,7 +277,6 @@ export default function ProblemPage() {
     }
   }, [results]);
 
-  // Handle submission
   const handleSubmit = () => {
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
       console.error('WebSocket not connected');

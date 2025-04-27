@@ -1,4 +1,3 @@
-// bun-ws-server.ts
 import { WebSocketServer, WebSocket as WSWebSocket } from "ws";
 import { writeFile, mkdir, rm, access } from "fs/promises";
 import { randomUUID } from "crypto";
@@ -10,7 +9,7 @@ import { jwtVerify, importJWK, type JWK } from 'jose';
 import type { string } from "zod";
 import type { $Enums, Languages } from "@prisma/client";
 
-// --- Configuration ---
+
 const key: JWK = JSON.parse(process.env.JWT_SIGNING_KEY!);
 const DOCKER_TIMEOUT_MS = 10000;
 const TEMP_DIR_BASE = "./tmp"; // Use a directory within the project instead of /tmp
@@ -20,7 +19,6 @@ if (!key) {
     process.exit(1);
 }
 
-// --- Authentication ---
 async function verifyToken(token: string): Promise<any> {
     try {
         return await jwtVerify(token, await importJWK(key, 'HS512'), {
@@ -32,13 +30,11 @@ async function verifyToken(token: string): Promise<any> {
     }
 }
 
-// --- Type Definition for Problem Args ---
 type ProblemArg = {
     name: string;
     type: string;
 };
 
-// --- Type Mappings for Parsing and Serialization ---
 interface TypeInfo {
     jsType: string;
     cppType: string;
@@ -96,7 +92,6 @@ function getTypeInfo(type: string): TypeInfo {
     return typeInfo;
 }
 
-// --- Job Queue ---
 type Job = {
     userId: string;
     lang: string;
@@ -108,12 +103,10 @@ type Job = {
 const queue: Job[] = [];
 let running = false;
 
-// Extend WebSocket type for user payload
 interface AuthenticatedWebSocket extends WSWebSocket {
     user?: { id: string; name?: string; email?: string };
 }
 
-// --- WebSocket Server ---
 const wss = new WebSocketServer({ port: 8080 });
 
 console.log("WebSocket server starting on ws://localhost:8080");
@@ -165,7 +158,6 @@ wss.on("connection", async (ws: AuthenticatedWebSocket, req) => {
     });
 });
 
-// --- Job Processing Logic ---
 async function processQueue() {
     if (running || queue.length === 0) {
         return;
@@ -245,16 +237,13 @@ async function processQueue() {
     console.log(`Processing job ${id} for user ${userId} in ${dir}`);
 
     try {
-        // Create directory with explicit permissions
         console.log(`Creating directory ${dir}...`);
         await mkdir(dir, { recursive: true, mode: 0o777 });
         console.log(`Directory ${dir} created.`);
 
-        // Verify directory exists
         await access(dir, constants.R_OK | constants.W_OK);
         console.log(`Directory ${dir} is accessible.`);
 
-        // Verify Dockerfile exists
         await access(`docker/${dockerfile}.dockerfile`, constants.R_OK);
         console.log(`Dockerfile docker/${dockerfile}.dockerfile found.`);
 
@@ -431,7 +420,6 @@ int main() {
                 break;
         }
 
-        // Write files and verify
         console.log(`Writing ${filename} to ${dir}...`);
         await writeFile(`${dir}/${filename}`, finalCode);
         await access(`${dir}/${filename}`, constants.R_OK | constants.W_OK);
@@ -654,7 +642,6 @@ ${executeCmd} < /app/input.txt
     }
 }
 
-// --- Utility: Execute Shell Commands ---
 function execPromise(cmd: string, timeout: number = DOCKER_TIMEOUT_MS): Promise<string> {
     return new Promise((resolve, reject) => {
         exec(cmd, { timeout: timeout }, (err, stdout, stderr) => {
@@ -673,7 +660,6 @@ function execPromise(cmd: string, timeout: number = DOCKER_TIMEOUT_MS): Promise<
     });
 }
 
-// Graceful shutdown
 process.on('SIGINT', () => {
     console.log('SIGINT received. Shutting down WebSocket server...');
     wss.close((err: any) => {
