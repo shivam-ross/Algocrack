@@ -38,8 +38,7 @@ type Argument = {
     // Write your code here
   }`,
       python: `def ${functionName}(${pythonArgs}):
-      # Write your code here
-      pass`,
+      # Write your code here`,
       cpp: `#include <vector>
   #include <string>
   using namespace std;
