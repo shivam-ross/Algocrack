@@ -11,7 +11,7 @@ export default function Admin(){
         id: string;
         title: string;
         description: string;
-        difficulty: "Easy" | "Medium" | "Hard";
+        difficulty: "EASY" | "MEDIUM" | "HARD";
         tags: string;
     }>>([])
 
